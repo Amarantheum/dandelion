@@ -69,7 +69,7 @@ fn main() {
     let num_vertices = models[0].mesh.positions.len() as i32;
     println!("num_indices: {}, num_normals: {}, num_vertices: {}", num_indices, num_normals, num_vertices);
     let mut native_options = eframe::NativeOptions::default();
-    native_options.multisampling = 16;
+    native_options.multisampling = 8;
     eframe::run_native("Dandelions", native_options, Box::new(|cc| Box::new(DandelionApp::new(cc))))
         .unwrap();
 }
