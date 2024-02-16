@@ -1,24 +1,35 @@
-use eframe::{egui_glow, glow::HasContext};
+use eframe::{egui::accesskit::Affine, egui_glow, glow::HasContext};
 use egui_glow::glow;
 use core::time;
 use std::time::Instant;
 
 use crate::{obj::JoinedOBJ, scene::Paintable};
+use crate::affine_matrix::AffineMatrix;
 
 pub struct Ground {
     program: glow::Program,
     obj: JoinedOBJ,
     time: Instant,
+    pub translation: AffineMatrix,
+    pub rotation: AffineMatrix,
+    pub scale: AffineMatrix,
 }
 
 impl Ground {
     pub fn new(gl: &glow::Context) -> Self {
         let program = unsafe { Self::create_program(gl) };
-        let obj = unsafe { JoinedOBJ::new(gl, "./Ground.obj", program).expect("Cannot create JoinedOBJ") };
+        let obj = unsafe { JoinedOBJ::new(gl, "./long_ground_25.obj", program).expect("Cannot create JoinedOBJ") };
+        let mut translation = AffineMatrix::new();
+        let rotation = AffineMatrix::new();
+        let scale = AffineMatrix::new();
+        translation.translate(0.0, -1.0, -2.0);
         Self {
             program,
             obj,
             time: Instant::now(),
+            translation,
+            rotation,
+            scale,
         }
     }
 
@@ -51,7 +62,16 @@ impl Ground {
         program
     }
 
-    
+    fn set_transformation_uniforms(&self, gl: &glow::Context) {
+        let translation_location = unsafe { gl.get_uniform_location(self.program, "translation").expect("Cannot get uniform location") };
+        let rotation_location = unsafe { gl.get_uniform_location(self.program, "rotation").expect("Cannot get uniform location") };
+        let scale_location = unsafe { gl.get_uniform_location(self.program, "scale").expect("Cannot get uniform location") };
+        unsafe {
+            gl.uniform_matrix_4_f32_slice(Some(&translation_location), false, &self.translation.to_uniform());
+            gl.uniform_matrix_4_f32_slice(Some(&rotation_location), false, &self.rotation.to_uniform());
+            gl.uniform_matrix_4_f32_slice(Some(&scale_location), false, &self.scale.to_uniform());
+        }
+    }
 }
 
 impl Paintable for Ground {
@@ -60,9 +80,7 @@ impl Paintable for Ground {
             gl.use_program(Some(self.program));
             let screen_size_location = gl.get_uniform_location(self.program, "screen_size").expect("Cannot get uniform location");
             gl.uniform_2_f32(Some(&screen_size_location), screen_size.0, screen_size.1);
-            let time_location = gl.get_uniform_location(self.program, "time").expect("Cannot get uniform location");
-            let time = self.time.elapsed().as_secs_f32();
-            gl.uniform_1_f32(Some(&time_location), time);
+            self.set_transformation_uniforms(gl);
             gl.bind_vertex_array(Some(self.obj.vao));
             gl.draw_elements(glow::TRIANGLES, self.obj.num_indices, glow::UNSIGNED_INT, 0);
 

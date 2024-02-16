@@ -6,10 +6,16 @@ in vec3 position;
 in vec3 normal;
 
 uniform vec2 screen_size;
-uniform float time;
+uniform mat4 translation;
+uniform mat4 rotation;
+uniform mat4 scale;
 
 out vec3 normal_interpolated;
 out vec3 vertex_position;
+
+float mod(float a, float b) {
+    return a - b * floor(a / b);
+}
 
 void main() {
     float r = screen_size.x / screen_size.y;
@@ -25,25 +31,13 @@ void main() {
         0.0, 0.0, -(f + n) / (f - n), -1.0,
         0.0, 0.0, -2.0 * f * n / (f - n), 0.0
     );
-    mat4 transform_matrix = mat4(
-        1.0, 0.0, 0.0, 0.0,
-        0.0, 1.0, 0.0, 0.0,
-        0.0, 0.0, 1.0, 0.0,
-        0.0, -0.1, -1.0, 1.0
-    );
-    mat4 rotation_matrix = mat4(
-        cos(time), 0.0, sin(time), 0.0,
-        0.0, 1.0, 0.0, 0.0,
-        -sin(time), 0.0, cos(time), 0.0,
-        0.0, 0.0, 0.0, 1.0
-    );
     mat4 view_matrix = mat4(
         1.0, 0.0, 0.0, 0.0,
         0.0, 1.0, 0.0, 0.0,
         0.0, 0.0, 1.0, 0.0,
         0.0, 0.0, 0.0, 1.0
     );
-    mat4 M = transform_matrix * rotation_matrix;
+    mat4 M = translation * rotation * scale;
     vec4 world_position = M * vec4(position, 1.0);
     gl_Position = perspective_matrix * view_matrix * world_position;
     

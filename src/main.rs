@@ -8,6 +8,7 @@ mod dandelion;
 mod obj;
 mod ground;
 mod scene;
+mod affine_matrix;
 
 struct DandelionApp {
     scene: Arc<Mutex<Scene>>,
@@ -28,7 +29,9 @@ impl DandelionApp {
         let callback = egui::PaintCallback {
             rect,
             callback: Arc::new(egui_glow::CallbackFn::new(move |_info, painter| {
-                scene.lock().paint(painter.gl(), (rect.width(), rect.height()));
+                let mut scene = scene.lock();
+                scene.update();
+                scene.paint(painter.gl(), (rect.width(), rect.height()));
             }))
         };
         ui.painter().add(callback);
