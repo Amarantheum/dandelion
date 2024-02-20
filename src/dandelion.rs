@@ -4,31 +4,34 @@ use tobj;
 use bytemuck;
 use std::time::Instant;
 
+use crate::affine_matrix::AffineMatrix;
 use crate::scene::Paintable;
+use crate::obj::OBJ;
+use crate::create_program;
 
 pub struct DandelionSeed {
-    program: glow::Program,
-    vertex_array: glow::VertexArray,
-    num_indices: i32,
-    position: Position3D,
-    rotation: Rotation3D,
-    time: Instant,
+    stem_program: glow::Program,
+    fluff_program: glow::Program,
+    obj: OBJ,
+    pub translation: AffineMatrix,
+    pub rotation: AffineMatrix,
+    pub scale: AffineMatrix,
 }
 
 impl DandelionSeed {
     pub fn new(gl: &glow::Context) -> Self {
-        let program = unsafe { Self::create_program(gl) };
-        let (vertex_array, num_indices) = unsafe { Self::initialize_vertices(gl, program) };
-        let position = Position3D { x: 0.0, y: 0.0, z: 0.0 };
-        let rotation = Rotation3D { x: 0.0, y: 0.0, z: 0.0 };
-        let time = Instant::now();
+        let mut obj = OBJ::new("./DandelionSeed.obj").unwrap();
+        let stem_program = create_program!(include_str!("./shaders/dandelion.vs"), include_str!("./shaders/dandelion.fs"), gl);
+        let fluff_program = create_program!(include_str!("./shaders/dandelion_bristle.vs"), include_str!("./shaders/dandelion_bristle.fs"), gl);
+        obj.build_vao(gl, stem_program, "Circle").unwrap();
+        obj.build_vao(gl, fluff_program, "Mesh").unwrap();
         Self {
-            program,
-            vertex_array,
-            num_indices,
-            position,
-            rotation,
-            time,
+            stem_program,
+            fluff_program,
+            obj,
+            translation: AffineMatrix::new(),
+            rotation: AffineMatrix::new(),
+            scale: AffineMatrix::new(),
         }
     }
 
@@ -102,36 +105,46 @@ impl DandelionSeed {
 
     pub fn destroy(self, gl: &glow::Context) {
         unsafe {
-            gl.delete_program(self.program);
-            gl.delete_vertex_array(self.vertex_array);
+            gl.delete_program(self.stem_program);
+            gl.delete_program(self.fluff_program);
+            self.obj.destroy(gl);
+        }
+    }
+
+    fn set_transformation_uniforms(&self, gl: &glow::Context, program: glow::Program) {
+        let translation_location = unsafe { gl.get_uniform_location(program, "translation").expect("Cannot get uniform location") };
+        let rotation_location = unsafe { gl.get_uniform_location(program, "rotation").expect("Cannot get uniform location") };
+        let scale_location = unsafe { gl.get_uniform_location(program, "scale").expect("Cannot get uniform location") };
+        unsafe {
+            gl.uniform_matrix_4_f32_slice(Some(&translation_location), false, &self.translation.to_uniform());
+            gl.uniform_matrix_4_f32_slice(Some(&rotation_location), false, &self.rotation.to_uniform());
+            gl.uniform_matrix_4_f32_slice(Some(&scale_location), false, &self.scale.to_uniform());
         }
     }
 }
 
 impl Paintable for DandelionSeed {
-    fn paint(&self, gl: &glow::Context, _screen_size: (f32, f32)) {
+    fn paint(&self, gl: &glow::Context, screen_size: (f32, f32)) {
         unsafe {
-            gl.use_program(Some(self.program));
-            let time_location = gl.get_uniform_location(self.program, "time")
-                .expect("could not find uniform location");
-            let time = self.time.elapsed().as_secs_f32();
-            gl.uniform_1_f32(Some(&time_location), time);
-            gl.bind_vertex_array(Some(self.vertex_array));
-            gl.draw_elements(glow::TRIANGLES, self.num_indices, glow::UNSIGNED_INT, 0);
+            gl.use_program(Some(self.stem_program));
+            let screen_size_location = gl.get_uniform_location(self.stem_program, "screen_size").expect("Cannot get uniform location");
+            gl.uniform_2_f32(Some(&screen_size_location), screen_size.0, screen_size.1);
+            self.set_transformation_uniforms(gl, self.stem_program);
 
+            let stem_vao = self.obj["Circle"].get_vao().unwrap();
+            gl.bind_vertex_array(Some(stem_vao.vao));
+            gl.draw_elements(glow::TRIANGLES, stem_vao.num_indices, glow::UNSIGNED_INT, 0);
+            gl.bind_vertex_array(None);
+
+            gl.use_program(Some(self.fluff_program));
+            let screen_size_location = gl.get_uniform_location(self.fluff_program, "screen_size").expect("Cannot get uniform location");
+            gl.uniform_2_f32(Some(&screen_size_location), screen_size.0, screen_size.1);
+            self.set_transformation_uniforms(gl, self.fluff_program);
+
+            let fluff_vao = self.obj["Mesh"].get_vao().unwrap();
+            gl.bind_vertex_array(Some(fluff_vao.vao));
+            gl.draw_elements(glow::TRIANGLES, fluff_vao.num_indices, glow::UNSIGNED_INT, 0);
             gl.bind_vertex_array(None);
         }
     }
-}
-
-struct Position3D {
-    x: f64,
-    y: f64,
-    z: f64,
-}
-
-struct Rotation3D {
-    x: f64,
-    y: f64,
-    z: f64,
 }

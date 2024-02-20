@@ -98,6 +98,24 @@ impl AffineMatrix {
         self.matrix[1][1] = cos;
     }
 
+    pub fn set_rotate(&mut self, x: f32, y: f32, z: f32) {
+        let sin_x = x.sin();
+        let cos_x = x.cos();
+        let sin_y = y.sin();
+        let cos_y = y.cos();
+        let sin_z = z.sin();
+        let cos_z = z.cos();
+        self.matrix[0][0] = cos_y * cos_z;
+        self.matrix[0][1] = cos_y * sin_z;
+        self.matrix[0][2] = -sin_y;
+        self.matrix[1][0] = sin_x * sin_y * cos_z - cos_x * sin_z;
+        self.matrix[1][1] = sin_x * sin_y * sin_z + cos_x * cos_z;
+        self.matrix[1][2] = sin_x * cos_y;
+        self.matrix[2][0] = cos_x * sin_y * cos_z + sin_x * sin_z;
+        self.matrix[2][1] = cos_x * sin_y * sin_z - sin_x * cos_z;
+        self.matrix[2][2] = cos_x * cos_y;
+    }
+
     pub fn multiply(&mut self, other: &Self) {
         let mut result = [[0.0; 4]; 4];
         for i in 0..4 {

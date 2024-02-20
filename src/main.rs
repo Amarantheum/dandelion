@@ -9,6 +9,11 @@ mod obj;
 mod ground;
 mod scene;
 mod affine_matrix;
+mod kinect_tracker;
+
+lazy_static::lazy_static! {
+    static ref MID_SPINE: Mutex<(f32, f32, f32)> = Mutex::new((0.0, 0.0, 0.0));
+}
 
 struct DandelionApp {
     scene: Arc<Mutex<Scene>>,
@@ -60,19 +65,42 @@ impl App for DandelionApp {
 }
 
 fn main() {
-    let (models, _) = tobj::load_obj("./DandelionSeed.obj", &tobj::GPU_LOAD_OPTIONS).expect("Cannot load DandelionSeed.obj");
-    let min_x = models[0].mesh.positions.iter().chain(models[1].mesh.positions.iter().step_by(3)).step_by(3).min_by(|a, b| a.partial_cmp(b).unwrap()).unwrap();
-    let min_y = models[0].mesh.positions.iter().chain(models[1].mesh.positions.iter().skip(1).step_by(3)).skip(1).step_by(3).min_by(|a, b| a.partial_cmp(b).unwrap()).unwrap();
-    let max_x = models[0].mesh.positions.iter().chain(models[1].mesh.positions.iter().step_by(3)).step_by(3).max_by(|a, b| a.partial_cmp(b).unwrap()).unwrap();
-    let max_y = models[0].mesh.positions.iter().chain(models[1].mesh.positions.iter().skip(1).step_by(3)).skip(1).step_by(3).max_by(|a, b| a.partial_cmp(b).unwrap()).unwrap();
-    println!("min_x: {}, min_y: {}, max_x: {}, max_y: {}", min_x, min_y, max_x, max_y);
-
-    let num_indices = models[0].mesh.indices.len() as i32;
-    let num_normals = models[0].mesh.normals.len() as i32;
-    let num_vertices = models[0].mesh.positions.len() as i32;
-    println!("num_indices: {}, num_normals: {}, num_vertices: {}", num_indices, num_normals, num_vertices);
     let mut native_options = eframe::NativeOptions::default();
     native_options.multisampling = 8;
     eframe::run_native("Dandelions", native_options, Box::new(|cc| Box::new(DandelionApp::new(cc))))
         .unwrap();
 }
+
+macro_rules! create_program{
+    ($vs:expr, $fs:expr, $gl:ident) => {
+        unsafe {
+            let program = $gl.create_program().expect("Cannot create program");
+            let vertex_shader_source = $vs;
+            let fragment_shader_source = $fs;
+
+            let vertex_shader = $gl.create_shader(glow::VERTEX_SHADER).expect("Cannot create vertex shader");
+            $gl.shader_source(vertex_shader, vertex_shader_source);
+            $gl.compile_shader(vertex_shader);
+            assert!($gl.get_shader_compile_status(vertex_shader), "Cannot compile vertex shader: {}", $gl.get_shader_info_log(vertex_shader));
+
+            let fragment_shader = $gl.create_shader(glow::FRAGMENT_SHADER).expect("Cannot create fragment shader");
+            $gl.shader_source(fragment_shader, fragment_shader_source);
+            $gl.compile_shader(fragment_shader);
+            assert!($gl.get_shader_compile_status(fragment_shader), "Cannot compile fragment shader: {}", $gl.get_shader_info_log(fragment_shader));
+
+            $gl.attach_shader(program, vertex_shader);
+            $gl.attach_shader(program, fragment_shader);
+
+            $gl.link_program(program);
+            assert!($gl.get_program_link_status(program), "Cannot link program: {}", $gl.get_program_info_log(program));
+
+            $gl.detach_shader(program, vertex_shader);
+            $gl.detach_shader(program, fragment_shader);
+            $gl.delete_shader(vertex_shader);
+            $gl.delete_shader(fragment_shader);
+            program
+        }
+    }
+}
+
+pub(crate) use create_program;
