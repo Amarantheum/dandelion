@@ -1,6 +1,8 @@
 #version 430
 out vec4 fragColor;
 
+uniform vec4 color;
+
 in vec3 normal_interpolated;
 in vec3 vertex_position;
 
@@ -10,5 +12,5 @@ void main() {
         discard;
     }
     direction = exp(-100.0 * direction * direction);
-    fragColor = vec4(vec3(1.0) * direction, 1.0);
+    fragColor = vec4(vec3(color.r, color.g, color.b) * direction, 1.0);
 }

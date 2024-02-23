@@ -1,8 +1,10 @@
+use dancer_mock::spawn_dancer_mock;
 use eframe::{egui::{self, Margin}, egui_glow, epaint::Color32, App, CreationContext, Frame};
 use dandelion::DandelionSeed;
 use egui::mutex::Mutex;
 use std::{num, sync::Arc};
 use scene::{Scene, Paintable};
+use kinect_tracker::spawn_osc_handler;
 
 mod dandelion;
 mod obj;
@@ -10,13 +12,23 @@ mod ground;
 mod scene;
 mod affine_matrix;
 mod kinect_tracker;
+mod dancer_mock;
+mod color;
 
 lazy_static::lazy_static! {
-    static ref MID_SPINE: Mutex<(f32, f32, f32)> = Mutex::new((0.0, 0.0, 0.0));
+    pub static ref BODY1_BASE_SPINE: Mutex<[f32; 3]> = Mutex::new([0.0, 0.0, 0.0]);
+    pub static ref BODY2_BASE_SPINE: Mutex<[f32; 3]> = Mutex::new([0.0, 0.0, 0.0]);
+    pub static ref BODY1_HEAD: Mutex<[f32; 3]> = Mutex::new([0.0, 0.0, 0.0]);
+    pub static ref BODY2_HEAD: Mutex<[f32; 3]> = Mutex::new([0.0, 0.0, 0.0]);
 }
+
+const AFFECTION_STEP_SIZE: f32 = 0.01;
 
 struct DandelionApp {
     scene: Arc<Mutex<Scene>>,
+    started: bool,
+    brightness: f32,
+    affection: f32,
 }
 
 impl DandelionApp {
@@ -25,17 +37,60 @@ impl DandelionApp {
             .expect("No OpenGL context");
         Self {
             scene: Arc::new(Mutex::new(Scene::new(gl))),
+            started: false,
+            brightness: 0.0,
+            affection: 0.0,
         }
     }
 
     fn draw_scene(&mut self, ui: &mut egui::Ui) {
         let rect = ui.available_rect_before_wrap();
         let scene = self.scene.clone();
+        let mut motion_vector = [0; 2];
+        if ui.input(|i| i.key_pressed(egui::Key::ArrowUp)) {
+            motion_vector[0] += 1;
+        }
+        if ui.input(|i| i.key_pressed(egui::Key::ArrowDown)) {
+            motion_vector[0] -= 1;
+        }
+        if ui.input(|i| i.key_pressed(egui::Key::ArrowRight)) {
+            motion_vector[1] += 1;
+        }
+        if ui.input(|i| i.key_pressed(egui::Key::ArrowLeft)) {
+            motion_vector[1] -= 1;
+        }
+
+        if ui.input(|i| i.key_pressed(egui::Key::Space)) {
+            self.started = !self.started;
+        }
+
+        if ui.input(|i| i.key_pressed(egui::Key::W)) {
+            if self.affection < 1.0 {
+                self.affection += AFFECTION_STEP_SIZE;
+            }
+        }
+        if ui.input(|i| i.key_pressed(egui::Key::S)) {
+            if self.affection > 0.0 {
+                self.affection -= AFFECTION_STEP_SIZE;
+            }
+        }
+
+        if self.started && self.brightness < 1.0 {
+            self.brightness += 0.01;
+        }
+        if !self.started && self.brightness > 0.0 {
+            self.brightness -= 0.01;
+        }
+        let brightness = self.brightness;
+        let affection = self.affection;
+
         let callback = egui::PaintCallback {
             rect,
             callback: Arc::new(egui_glow::CallbackFn::new(move |_info, painter| {
                 let mut scene = scene.lock();
-                scene.update();
+                scene.update(brightness, affection);
+                scene.camera_pos[2] += motion_vector[0] as f32 * -0.1;
+                scene.camera_pos[0] += motion_vector[1] as f32 * 0.1;
                 scene.paint(painter.gl(), (rect.width(), rect.height()));
             }))
         };
@@ -65,6 +120,8 @@ impl App for DandelionApp {
 }
 
 fn main() {
+    spawn_osc_handler().unwrap();
+    spawn_dancer_mock().unwrap();
     let mut native_options = eframe::NativeOptions::default();
     native_options.multisampling = 8;
     eframe::run_native("Dandelions", native_options, Box::new(|cc| Box::new(DandelionApp::new(cc))))

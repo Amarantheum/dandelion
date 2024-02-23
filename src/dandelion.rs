@@ -1,3 +1,5 @@
+use eframe::egui::accesskit::Affine;
+use eframe::egui::Color32;
 use eframe::{egui_glow, glow::HasContext};
 use egui_glow::glow;
 use tobj;
@@ -5,6 +7,7 @@ use bytemuck;
 use std::time::Instant;
 
 use crate::affine_matrix::AffineMatrix;
+use crate::color::Color;
 use crate::scene::Paintable;
 use crate::obj::OBJ;
 use crate::create_program;
@@ -16,6 +19,9 @@ pub struct DandelionSeed {
     pub translation: AffineMatrix,
     pub rotation: AffineMatrix,
     pub scale: AffineMatrix,
+    pub theta: f32,
+    pub theta_delta: f32,
+    pub color: Color,
 }
 
 impl DandelionSeed {
@@ -32,7 +38,14 @@ impl DandelionSeed {
             translation: AffineMatrix::new(),
             rotation: AffineMatrix::new(),
             scale: AffineMatrix::new(),
+            theta: 0.0,
+            theta_delta: 0.0,
+            color: Color::from_gray(0.0, 1.0),
         }
+    }
+
+    pub fn get_position(&self) -> [f32; 3] {
+        [self.translation.matrix[3][0], self.translation.matrix[3][1], self.translation.matrix[3][2]]
     }
 
     unsafe fn create_program(gl: &glow::Context) -> glow::Program {
@@ -124,11 +137,15 @@ impl DandelionSeed {
 }
 
 impl Paintable for DandelionSeed {
-    fn paint(&self, gl: &glow::Context, screen_size: (f32, f32)) {
+    fn paint(&self, gl: &glow::Context, screen_size: (f32, f32), view_matrix: &AffineMatrix) {
         unsafe {
             gl.use_program(Some(self.stem_program));
             let screen_size_location = gl.get_uniform_location(self.stem_program, "screen_size").expect("Cannot get uniform location");
             gl.uniform_2_f32(Some(&screen_size_location), screen_size.0, screen_size.1);
+            let camera_matrix_location = gl.get_uniform_location(self.stem_program, "view_matrix").expect("Cannot get view_matrix uniform location");
+            gl.uniform_matrix_4_f32_slice(Some(&camera_matrix_location), false, &view_matrix.to_uniform());
+            let color_location = gl.get_uniform_location(self.stem_program, "color").expect("unable to find color location");
+            gl.uniform_4_f32(Some(&color_location), self.color[0], self.color[1], self.color[2], self.color[3]);
             self.set_transformation_uniforms(gl, self.stem_program);
 
             let stem_vao = self.obj["Circle"].get_vao().unwrap();
@@ -139,6 +156,10 @@ impl Paintable for DandelionSeed {
             gl.use_program(Some(self.fluff_program));
             let screen_size_location = gl.get_uniform_location(self.fluff_program, "screen_size").expect("Cannot get uniform location");
             gl.uniform_2_f32(Some(&screen_size_location), screen_size.0, screen_size.1);
+            let camera_matrix_location = gl.get_uniform_location(self.fluff_program, "view_matrix").expect("Cannot get view_matrix uniform location");
+            gl.uniform_matrix_4_f32_slice(Some(&camera_matrix_location), false, &view_matrix.to_uniform());
+            let color_location = gl.get_uniform_location(self.fluff_program, "color").expect("unable to find color location");
+            gl.uniform_4_f32(Some(&color_location), self.color[0], self.color[1], self.color[2], self.color[3]);
             self.set_transformation_uniforms(gl, self.fluff_program);
 
             let fluff_vao = self.obj["Mesh"].get_vao().unwrap();

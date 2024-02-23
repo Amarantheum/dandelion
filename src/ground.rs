@@ -1,8 +1,10 @@
+use eframe::egui::Color32;
 use eframe::{egui::accesskit::Affine, egui_glow, glow::HasContext};
 use egui_glow::glow;
 use core::time;
 use std::time::Instant;
 
+use crate::color::Color;
 use crate::{obj::JoinedOBJ, scene::Paintable};
 use crate::affine_matrix::AffineMatrix;
 
@@ -13,6 +15,7 @@ pub struct Ground {
     pub translation: AffineMatrix,
     pub rotation: AffineMatrix,
     pub scale: AffineMatrix,
+    pub color: Color,
 }
 
 impl Ground {
@@ -30,6 +33,7 @@ impl Ground {
             translation,
             rotation,
             scale,
+            color: Color::from_gray(0.0, 1.0),
         }
     }
 
@@ -75,11 +79,15 @@ impl Ground {
 }
 
 impl Paintable for Ground {
-    fn paint(&self, gl: &glow::Context, screen_size: (f32, f32)) {
+    fn paint(&self, gl: &glow::Context, screen_size: (f32, f32), view_matrix: &AffineMatrix) {
         unsafe {
             gl.use_program(Some(self.program));
             let screen_size_location = gl.get_uniform_location(self.program, "screen_size").expect("Cannot get uniform location");
             gl.uniform_2_f32(Some(&screen_size_location), screen_size.0, screen_size.1);
+            let camera_matrix_location = gl.get_uniform_location(self.program, "view_matrix").expect("Cannot get view_matrix uniform location");
+            gl.uniform_matrix_4_f32_slice(Some(&camera_matrix_location), false, &view_matrix.to_uniform());
+            let color_location = gl.get_uniform_location(self.program, "color").expect("unable to find color location");
+            gl.uniform_4_f32(Some(&color_location), self.color[0], self.color[1], self.color[2], self.color[3]);
             self.set_transformation_uniforms(gl);
             gl.bind_vertex_array(Some(self.obj.vao));
             gl.draw_elements(glow::TRIANGLES, self.obj.num_indices, glow::UNSIGNED_INT, 0);

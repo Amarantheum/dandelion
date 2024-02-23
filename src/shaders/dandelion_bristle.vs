@@ -9,8 +9,9 @@ uniform vec2 screen_size;
 uniform mat4 translation;
 uniform mat4 rotation;
 uniform mat4 scale;
+uniform mat4 view_matrix;
 
-out vec3 frag_normal;
+out vec3 normal_interpolated;
 
 void main() {
     float r = screen_size.x / screen_size.y;
@@ -26,14 +27,9 @@ void main() {
         0.0, 0.0, -(f + n) / (f - n), -1.0,
         0.0, 0.0, -2.0 * f * n / (f - n), 0.0
     );
-    mat4 view_matrix = mat4(
-        1.0, 0.0, 0.0, 0.0,
-        0.0, 1.0, 0.0, 0.0,
-        0.0, 0.0, 1.0, 0.0,
-        0.0, 0.0, 0.0, 1.0
-    );
-    mat4 M = translation * rotation * scale;
-    vec4 world_position = M * vec4(position.x, position.y - 8.0, position.z, 1.0);
-    gl_Position = perspective_matrix * view_matrix * world_position;
-    frag_normal = mat3(transpose(inverse(M))) * normal;
+    mat4 M = view_matrix * translation * rotation * scale;
+    vec4 camera_position = M * vec4(position, 1.0);
+    gl_Position = perspective_matrix * camera_position;
+    
+    normal_interpolated = mat3(transpose(inverse(M))) * normal;
 }
