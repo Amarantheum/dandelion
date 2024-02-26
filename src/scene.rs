@@ -2,6 +2,7 @@ use eframe::egui::accesskit::Affine;
 use eframe::epaint::text;
 use eframe::{egui_glow, glow::HasContext, egui};
 use egui_glow::glow;
+use std::f32::consts::PI;
 use std::time::Instant;
 use rand::prelude::*;
 use rand::rngs::{OsRng, StdRng};
@@ -10,7 +11,7 @@ use crate::color::Color;
 use crate::dandelion::DandelionSeed;
 use crate::ground::{self, Ground};
 use crate::affine_matrix::AffineMatrix;
-use crate::{BODY1_BASE_SPINE, BODY2_BASE_SPINE, BODY1_HEAD, BODY2_HEAD};
+use crate::{DandelionState, BODY1_BASE_SPINE, BODY1_HEAD, BODY2_BASE_SPINE, BODY2_HEAD};
 
 pub trait Paintable {
     fn paint(&self, gl: &glow::Context, screen_size: (f32, f32), view_matrix: &AffineMatrix);
@@ -19,11 +20,10 @@ pub trait Paintable {
 pub struct Scene {
     time: Instant,
     dandelion_seed1: DandelionSeed,
-    dandelion_seed1_theta: f32,
-    dandelion_seed1_theta_delta: f32,
     dandelion_seed2: DandelionSeed,
-    dandelion_seed2_theta: f32,
-    dandelion_seed2_theta_delta: f32,
+
+    dancing_dandelion1: DandelionSeed,
+    dancing_dandelion2: DandelionSeed,
     ground: Ground,
     ground_mirror: Ground,
     ground_2: Ground,
@@ -95,14 +95,18 @@ impl Scene {
             fbo
         };
 
+        let mut dancing_dandelion1 = DandelionSeed::new(gl);
+        dancing_dandelion1.scale.set_scale(0.04, 0.04, 0.04);
+        let mut dancing_dandelion2 = DandelionSeed::new(gl);
+        dancing_dandelion2.scale.set_scale(0.04, 0.04, 0.04);
+
+
         Self {
             time: Instant::now(),
             dandelion_seed1,
-            dandelion_seed1_theta: 0.0,
-            dandelion_seed1_theta_delta: 0.0,
             dandelion_seed2,
-            dandelion_seed2_theta: 0.0,
-            dandelion_seed2_theta_delta: 0.0,
+            dancing_dandelion1,
+            dancing_dandelion2,
             ground,
             ground_mirror,
             ground_2,
@@ -133,20 +137,21 @@ impl Scene {
         self.ground_mirror_2.color = Color::from_gray(brightness, 1.0);
     }
 
-    fn update_dandelion(dandelion: &mut DandelionSeed, rng: &mut OsRng, body_pos: [f32; 3], head_pos: [f32; 3], color: Color) {
+    fn update_dandelion(dandelion: &mut DandelionSeed, rng: &mut OsRng, body_pos: [f32; 3], head_pos: [f32; 3], color: Color, drift_strength: f32) {
         let alpha_y = 0.01;
         dandelion.theta_delta = alpha_y * (2.0 * rng.gen::<f32>() - 1.0) + (1.0 - alpha_y) * dandelion.theta_delta;
         dandelion.theta += dandelion.theta_delta;
         let mut theta = AffineMatrix::new();
         theta.set_rotate_y(dandelion.theta);
 
+        let mut drift_position = AffineMatrix::new();
+        drift_position.set_translate(10.0, -1.0, -2.0);
+
         let alpha = 0.1;
-        let cur_pos = dandelion.get_position();
-        dandelion.translation.set_translate(
-            (1.0 - alpha) * cur_pos[0] + alpha * body_pos[0],
-            (1.0 - alpha) * cur_pos[1] + alpha * body_pos[1],
-            (1.0 - alpha) * cur_pos[2] + alpha * body_pos[2]
-        );
+        let mut translate = AffineMatrix::new();
+        translate.set_translate(body_pos[0], body_pos[1], body_pos[2]);
+        dandelion.translation.combine(translate, alpha);
+        dandelion.translation.combine(drift_position, drift_strength);
 
         let mut rotation = AffineMatrix::new();
         rotation.rotate_towards(theta.multiply_3d(body_pos), theta.multiply_3d(head_pos));
@@ -173,21 +178,69 @@ impl Scene {
         let d2_b2_dist = Self::dist(d2_pos, body2_pos);
 
         if d2_b1_dist > d1_b1_dist && d1_b2_dist > d2_b2_dist && (d1_b1_dist > 1.0 || d2_b2_dist > 1.0) {
-            
+            self.swap_dandelions();
         }
     }
 
     fn swap_dandelions(&mut self) {
-        //std::mem::swap()
+        std::mem::swap(&mut self.dandelion_seed1, &mut self.dandelion_seed2);
+    }
+
+    pub fn dandelion_dance(&mut self, brightness: f32) {
+        let initialx_offset = 0.1;
+        let initialz_offset = 0.2;
+        let x_angle = PI / 4.0; 
+        let finaly_offset = -0.2;
+        let finalz_offset = -0.5;
+        let time = self.time.elapsed().as_secs_f32();
+        let mut color = Color::from_rgb_float(1.0, 0.85, 0.45);
+        color.scale(brightness);
+
+        let mut initial_rotation = AffineMatrix::new();
+        initial_rotation.set_rotate_x(x_angle);
+        let mut position = AffineMatrix::new();
+        position.set_translate(initialx_offset, 0.0, initialz_offset);
+        
+        let mut y_rotation = AffineMatrix::new();
+        y_rotation.set_rotate_y(time);
+
+        let mut translation = AffineMatrix::new();
+        translation.set_translate(0.0, finaly_offset, finalz_offset);
+
+        self.dancing_dandelion1.rotation = AffineMatrix::new();
+        self.dancing_dandelion1.translation = initial_rotation * position * y_rotation * translation;
+        self.dancing_dandelion1.color = color;
+
+        let mut initial_rotation = AffineMatrix::new();
+        initial_rotation.set_rotate_x(-x_angle);
+        let mut position = AffineMatrix::new();
+        position.set_translate(-initialx_offset, 0.0, -initialz_offset);
+        
+        let mut y_rotation = AffineMatrix::new();
+        y_rotation.set_rotate_y(time);
+
+        let mut translation = AffineMatrix::new();
+        translation.set_translate(0.0, finaly_offset, finalz_offset);
+
+        self.dancing_dandelion2.rotation = AffineMatrix::new();
+        self.dancing_dandelion2.translation = initial_rotation * position * y_rotation * translation;
+        self.dancing_dandelion2.color = color;
+
+        self.dancing_dandelion1.fancy = true;
+        self.dancing_dandelion2.fancy = true;
     }
     
-    pub fn update(&mut self, brightness: f32, affection: f32) {
-        self.update_ground(brightness);
-
-
-
-        let color = Color::from_gray(brightness, 1.0);
-
+    pub fn update(&mut self, state: DandelionState) {
+        
+ 
+        if state.dancing_brightness > 0.0 {
+            self.dandelion_dance(state.dancing_brightness);
+        }
+        self.update_ground(state.brightness);
+        self.dandelion_seed1.fancy = false;
+        self.dandelion_seed2.fancy = false;
+        let color = Color::from_gray(state.brightness, 1.0);
+        let affection = state.affection;
         let body_pos = *BODY1_BASE_SPINE.lock();
         let head_pos = *BODY1_HEAD.lock();
         let other_pos = *BODY2_BASE_SPINE.lock();
@@ -196,7 +249,8 @@ impl Scene {
             other_pos[1] * affection + (1.0 - affection) * head_pos[1],
             other_pos[2] * affection + (1.0 - affection) * head_pos[2],
         ];
-        Self::update_dandelion(&mut self.dandelion_seed1, &mut self.rng, body_pos, pos, color);
+        Self::update_dandelion(&mut self.dandelion_seed1, &mut self.rng, body_pos, pos, color, 0.0);
+        
 
         let body_pos = *BODY2_BASE_SPINE.lock();
         let head_pos = *BODY2_HEAD.lock();
@@ -206,10 +260,10 @@ impl Scene {
             other_pos[1] * affection + (1.0 - affection) * head_pos[1],
             other_pos[2] * affection + (1.0 - affection) * head_pos[2],
         ];
-        Self::update_dandelion(&mut self.dandelion_seed2, &mut self.rng, body_pos, pos, color);
+        Self::update_dandelion(&mut self.dandelion_seed2, &mut self.rng, body_pos, pos, color, state.drift_strength);        
     }
 
-    pub fn paint(&self, gl: &glow::Context, screen_size: (f32, f32)) {
+    pub fn paint(&self, gl: &glow::Context, screen_size: (f32, f32), state: DandelionState) {
         let mut view_matrix = AffineMatrix::new();
         view_matrix.set_translate(-self.camera_pos[0], -self.camera_pos[1], -self.camera_pos[2]);
 
@@ -219,9 +273,25 @@ impl Scene {
         self.ground_2.paint(gl, screen_size, &view_matrix);
         self.ground_mirror_2.paint(gl, screen_size, &view_matrix);
 
-        self.dandelion_seed1.paint(gl, screen_size, &view_matrix);
-        self.dandelion_seed2.paint(gl, screen_size, &view_matrix);
-
+        if state.brightness > 0.0 {
+            if self.dandelion_seed1.get_position()[2] < self.dandelion_seed2.get_position()[2] {
+                self.dandelion_seed1.paint(gl, screen_size, &view_matrix);
+                self.dandelion_seed2.paint(gl, screen_size, &view_matrix);
+            } else {
+                self.dandelion_seed2.paint(gl, screen_size, &view_matrix);
+                self.dandelion_seed1.paint(gl, screen_size, &view_matrix);
+            }
+        }
+        if state.dancing_brightness > 0.0 {
+            if self.dancing_dandelion1.get_position()[2] < self.dancing_dandelion2.get_position()[2] {
+                self.dancing_dandelion1.paint(gl, screen_size, &view_matrix);
+                self.dancing_dandelion2.paint(gl, screen_size, &view_matrix);
+            } else {
+                self.dancing_dandelion2.paint(gl, screen_size, &view_matrix);
+                self.dancing_dandelion1.paint(gl, screen_size, &view_matrix);
+            }
+        }
+        
         
     }
 }

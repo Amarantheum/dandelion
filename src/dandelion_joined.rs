@@ -9,47 +9,28 @@ use std::time::Instant;
 use crate::affine_matrix::AffineMatrix;
 use crate::color::Color;
 use crate::scene::Paintable;
-use crate::obj::{OBJ, VAO};
+use crate::obj::OBJ;
 use crate::create_program;
 
-pub struct DandelionSeed {
-    stem_program: glow::Program,
-    fluff_program: glow::Program,
-    fancy_program: glow::Program,
-    fluff_fancy_program: glow::Program,
-    stem_vao: VAO,
-    fluff_vao: VAO,
-    stem_fancy_vao: VAO,
-    fluff_fancy_vao: VAO,
-    pub translation: AffineMatrix,
-    pub rotation: AffineMatrix,
-    pub scale: AffineMatrix,
-    pub theta: f32,
-    pub theta_delta: f32,
-    pub color: Color,
-    pub fancy: bool,
+pub struct DandelionSeedJoined {
+    program: glow::Program,
+    translation: AffineMatrix,
+    rotation: AffineMatrix,
+    scale: AffineMatrix,
 }
 
-impl DandelionSeed {
+impl DandelionSeedJoined {
     pub fn new(gl: &glow::Context) -> Self {
         let mut obj = OBJ::new("./DandelionSeed.obj").unwrap();
-        let stem_program = create_program!(include_str!("./shaders/dandelion.vs"), include_str!("./shaders/dandelion.fs"), gl);
-        let fluff_program = create_program!(include_str!("./shaders/dandelion_bristle.vs"), include_str!("./shaders/dandelion_bristle.fs"), gl);
-        let fancy_program = create_program!(include_str!("./shaders/dandelion_fancy.vs"), include_str!("./shaders/dandelion_fancy.fs"), gl);
-        let fluff_fancy_program = create_program!(include_str!("./shaders/dandelion_fancy.vs"), include_str!("./shaders/dandelion_fancy.fs"), gl);
-        let stem_vao = obj["Circle"].into_vao(gl, stem_program).unwrap();
-        let fluff_vao = obj["Mesh"].into_vao(gl, fluff_program).unwrap();
-        let stem_fancy_vao = obj["Circle"].into_vao(gl, fancy_program).unwrap();
-        let fluff_fancy_vao = obj["Mesh"].into_vao(gl, fluff_fancy_program).unwrap();
+        let program = create_program!(include_str!("./shaders/dandelion_fancy.vs"), include_str!("./shaders/dandelion_fancy.fs"), gl);
+        obj.build_vao(gl, stem_program, "Circle").unwrap();
+        obj.build_vao(gl, fluff_program, "Mesh").unwrap();
         Self {
             stem_program,
             fluff_program,
             fancy_program,
             fluff_fancy_program,
-            stem_vao,
-            fluff_vao,
-            stem_fancy_vao,
-            fluff_fancy_vao,
+            obj,
             translation: AffineMatrix::new(),
             rotation: AffineMatrix::new(),
             scale: AffineMatrix::new(),
@@ -136,12 +117,7 @@ impl DandelionSeed {
         unsafe {
             gl.delete_program(self.stem_program);
             gl.delete_program(self.fluff_program);
-            
-            gl.delete_vertex_array(self.stem_vao.vao);
-            gl.delete_vertex_array(self.fluff_vao.vao);
-            
-            gl.delete_vertex_array(self.stem_fancy_vao.vao);
-            gl.delete_vertex_array(self.fluff_fancy_vao.vao);
+            self.obj.destroy(gl);
         }
     }
 
@@ -170,8 +146,9 @@ impl Paintable for DandelionSeed {
                 gl.uniform_4_f32(Some(&color_location), self.color[0], self.color[1], self.color[2], self.color[3]);
                 self.set_transformation_uniforms(gl, self.stem_program);
 
-                gl.bind_vertex_array(Some(self.stem_vao.vao));
-                gl.draw_elements(glow::TRIANGLES, self.stem_vao.num_indices, glow::UNSIGNED_INT, 0);
+                let stem_vao = self.obj["Circle"].get_vao().unwrap();
+                gl.bind_vertex_array(Some(stem_vao.vao));
+                gl.draw_elements(glow::TRIANGLES, stem_vao.num_indices, glow::UNSIGNED_INT, 0);
                 gl.bind_vertex_array(None);
 
                 gl.use_program(Some(self.fluff_program));
@@ -183,8 +160,9 @@ impl Paintable for DandelionSeed {
                 gl.uniform_4_f32(Some(&color_location), self.color[0], self.color[1], self.color[2], self.color[3]);
                 self.set_transformation_uniforms(gl, self.fluff_program);
 
-                gl.bind_vertex_array(Some(self.fluff_vao.vao));
-                gl.draw_elements(glow::TRIANGLES, self.fluff_vao.num_indices, glow::UNSIGNED_INT, 0);
+                let fluff_vao = self.obj["Mesh"].get_vao().unwrap();
+                gl.bind_vertex_array(Some(fluff_vao.vao));
+                gl.draw_elements(glow::TRIANGLES, fluff_vao.num_indices, glow::UNSIGNED_INT, 0);
                 gl.bind_vertex_array(None);
             } else {
                 gl.use_program(Some(self.fancy_program));
@@ -192,12 +170,13 @@ impl Paintable for DandelionSeed {
                 gl.uniform_2_f32(Some(&screen_size_location), screen_size.0, screen_size.1);
                 let camera_matrix_location = gl.get_uniform_location(self.fancy_program, "view_matrix").expect("Cannot get view_matrix uniform location");
                 gl.uniform_matrix_4_f32_slice(Some(&camera_matrix_location), false, &view_matrix.to_uniform());
-                let color_location = gl.get_uniform_location(self.fancy_program, "color").expect("unable to find color location");
-                gl.uniform_4_f32(Some(&color_location), self.color[0], self.color[1], self.color[2], self.color[3]);
+                //let color_location = gl.get_uniform_location(self.fancy_program, "color").expect("unable to find color location");
+                //gl.uniform_4_f32(Some(&color_location), self.color[0], self.color[1], self.color[2], self.color[3]);
                 self.set_transformation_uniforms(gl, self.fancy_program);
 
-                gl.bind_vertex_array(Some(self.stem_fancy_vao.vao));
-                gl.draw_elements(glow::TRIANGLES, self.stem_fancy_vao.num_indices, glow::UNSIGNED_INT, 0);
+                let stem_vao = self.obj["Circle"].get_vao().unwrap();
+                gl.bind_vertex_array(Some(stem_vao.vao));
+                gl.draw_elements(glow::TRIANGLES, stem_vao.num_indices, glow::UNSIGNED_INT, 0);
                 gl.bind_vertex_array(None);
 
                 gl.use_program(Some(self.fluff_fancy_program));
@@ -209,8 +188,9 @@ impl Paintable for DandelionSeed {
                 gl.uniform_4_f32(Some(&color_location), self.color[0], self.color[1], self.color[2], self.color[3]);
                 self.set_transformation_uniforms(gl, self.fluff_fancy_program);
 
-                gl.bind_vertex_array(Some(self.fluff_fancy_vao.vao));
-                gl.draw_elements(glow::TRIANGLES, self.fluff_fancy_vao.num_indices, glow::UNSIGNED_INT, 0);
+                let fluff_vao = self.obj["Mesh"].get_vao().unwrap();
+                gl.bind_vertex_array(Some(fluff_vao.vao));
+                gl.draw_elements(glow::TRIANGLES, fluff_vao.num_indices, glow::UNSIGNED_INT, 0);
                 gl.bind_vertex_array(None);
             }
             

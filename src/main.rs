@@ -14,6 +14,7 @@ mod affine_matrix;
 mod kinect_tracker;
 mod dancer_mock;
 mod color;
+//mod dandelion_joined;
 
 lazy_static::lazy_static! {
     pub static ref BODY1_BASE_SPINE: Mutex<[f32; 3]> = Mutex::new([0.0, 0.0, 0.0]);
@@ -22,26 +23,43 @@ lazy_static::lazy_static! {
     pub static ref BODY2_HEAD: Mutex<[f32; 3]> = Mutex::new([0.0, 0.0, 0.0]);
 }
 
-const AFFECTION_STEP_SIZE: f32 = 0.01;
+const AFFECTION_STEP_SIZE: f32 = 0.001;
+
+#[derive(Debug, Clone, Copy)]
+struct DandelionState {
+    pub started: bool,
+    pub brightness: f32,
+    pub affection: f32,
+    pub scene_3: bool,
+    pub dancing_brightness: f32,
+    pub scene_5: bool,
+    pub drift_strength: f32,
+}
 
 struct DandelionApp {
     scene: Arc<Mutex<Scene>>,
-    started: bool,
-    brightness: f32,
-    affection: f32,
     fullscreen: bool,
+    state: DandelionState,
 }
 
 impl DandelionApp {
     fn new(cc: &CreationContext) -> Self {
         let gl = cc.gl.as_ref()
             .expect("No OpenGL context");
-        Self {
-            scene: Arc::new(Mutex::new(Scene::new(gl))),
+        let state = DandelionState {
             started: false,
             brightness: 0.0,
             affection: 0.0,
+            scene_3: false,
+            dancing_brightness: 0.0,
+            scene_5: false,
+            drift_strength: 0.0,
+
+        };
+        Self {
+            scene: Arc::new(Mutex::new(Scene::new(gl))),
             fullscreen: false,
+            state,
         }
     }
 
@@ -62,38 +80,66 @@ impl DandelionApp {
             motion_vector[1] -= 1;
         }
 
+        if ui.input(|i| i.key_pressed(egui::Key::Num3)) {
+            self.state.scene_3 = !self.state.scene_3;
+        }
+        if ui.input(|i| i.key_pressed(egui::Key::Num5)) {
+            self.state.scene_5 = !self.state.scene_5;
+        }
+
         if ui.input(|i| i.key_pressed(egui::Key::Space)) {
-            self.started = !self.started;
+            self.state.started = !self.state.started;
         }
 
         if ui.input(|i| i.key_down(egui::Key::W)) {
-            if self.affection < 1.0 {
-                self.affection += AFFECTION_STEP_SIZE;
+            if self.state.affection < 1.0 {
+                self.state.affection += AFFECTION_STEP_SIZE;
             }
         }
         if ui.input(|i| i.key_down(egui::Key::S)) {
-            if self.affection > 0.0 {
-                self.affection -= AFFECTION_STEP_SIZE;
+            if self.state.affection > 0.0 {
+                self.state.affection -= AFFECTION_STEP_SIZE * 10.0;
             }
         }
 
-        if self.started && self.brightness < 1.0 {
-            self.brightness += 0.01;
+        let dancing_transition_speed = 0.01;
+        if self.state.started && self.state.scene_3 && self.state.dancing_brightness < 1.0 {
+            self.state.dancing_brightness += dancing_transition_speed;
+            if self.state.brightness > 0.0 {
+                self.state.brightness -= dancing_transition_speed;
+            }
         }
-        if !self.started && self.brightness > 0.0 {
-            self.brightness -= 0.01;
+        if self.state.started && !self.state.scene_3 && self.state.dancing_brightness > 0.0 {
+            self.state.dancing_brightness = 0_f32.max(self.state.dancing_brightness - dancing_transition_speed);
+            if self.state.brightness < 1.0 {
+                self.state.brightness += dancing_transition_speed;
+            }
         }
-        let brightness = self.brightness;
-        let affection = self.affection;
+
+        if self.state.started && self.state.brightness < 1.0 && self.state.dancing_brightness == 0.0 {
+            self.state.brightness += 0.01;
+        }
+        if !self.state.started && self.state.brightness > 0.0 && self.state.dancing_brightness == 0.0 {
+            self.state.brightness -= 0.01;
+        }
+
+        if self.state.started && self.state.scene_5 && self.state.drift_strength < 1.0 {
+            self.state.drift_strength += 0.0001;
+        }
+        if self.state.started && !self.state.scene_5 && self.state.drift_strength > 0.0 {
+            self.state.drift_strength -= 0.0001;
+        }
+        //println!("brightness: {}", self.state.brightness);
+        let state = self.state;
 
         let callback = egui::PaintCallback {
             rect,
             callback: Arc::new(egui_glow::CallbackFn::new(move |_info, painter| {
                 let mut scene = scene.lock();
-                scene.update(brightness, affection);
+                scene.update(state);
                 scene.camera_pos[2] += motion_vector[0] as f32 * -0.01;
                 scene.camera_pos[0] += motion_vector[1] as f32 * 0.01;
-                scene.paint(painter.gl(), (rect.width(), rect.height()));
+                scene.paint(painter.gl(), (rect.width(), rect.height()), state);
             }))
         };
         ui.painter().add(callback);
