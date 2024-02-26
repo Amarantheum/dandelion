@@ -1,5 +1,5 @@
 use dancer_mock::spawn_dancer_mock;
-use eframe::{egui::{self, Margin}, egui_glow, epaint::Color32, App, CreationContext, Frame};
+use eframe::{egui::{self, Margin, viewport::ViewportCommand}, egui_glow, epaint::Color32, App, CreationContext, Frame};
 use dandelion::DandelionSeed;
 use egui::mutex::Mutex;
 use std::{num, sync::Arc};
@@ -29,6 +29,7 @@ struct DandelionApp {
     started: bool,
     brightness: f32,
     affection: f32,
+    fullscreen: bool,
 }
 
 impl DandelionApp {
@@ -40,6 +41,7 @@ impl DandelionApp {
             started: false,
             brightness: 0.0,
             affection: 0.0,
+            fullscreen: false,
         }
     }
 
@@ -47,16 +49,16 @@ impl DandelionApp {
         let rect = ui.available_rect_before_wrap();
         let scene = self.scene.clone();
         let mut motion_vector = [0; 2];
-        if ui.input(|i| i.key_pressed(egui::Key::ArrowUp)) {
+        if ui.input(|i| i.key_down(egui::Key::ArrowUp)) {
             motion_vector[0] += 1;
         }
-        if ui.input(|i| i.key_pressed(egui::Key::ArrowDown)) {
+        if ui.input(|i| i.key_down(egui::Key::ArrowDown)) {
             motion_vector[0] -= 1;
         }
-        if ui.input(|i| i.key_pressed(egui::Key::ArrowRight)) {
+        if ui.input(|i| i.key_down(egui::Key::ArrowRight)) {
             motion_vector[1] += 1;
         }
-        if ui.input(|i| i.key_pressed(egui::Key::ArrowLeft)) {
+        if ui.input(|i| i.key_down(egui::Key::ArrowLeft)) {
             motion_vector[1] -= 1;
         }
 
@@ -64,12 +66,12 @@ impl DandelionApp {
             self.started = !self.started;
         }
 
-        if ui.input(|i| i.key_pressed(egui::Key::W)) {
+        if ui.input(|i| i.key_down(egui::Key::W)) {
             if self.affection < 1.0 {
                 self.affection += AFFECTION_STEP_SIZE;
             }
         }
-        if ui.input(|i| i.key_pressed(egui::Key::S)) {
+        if ui.input(|i| i.key_down(egui::Key::S)) {
             if self.affection > 0.0 {
                 self.affection -= AFFECTION_STEP_SIZE;
             }
@@ -89,8 +91,8 @@ impl DandelionApp {
             callback: Arc::new(egui_glow::CallbackFn::new(move |_info, painter| {
                 let mut scene = scene.lock();
                 scene.update(brightness, affection);
-                scene.camera_pos[2] += motion_vector[0] as f32 * -0.1;
-                scene.camera_pos[0] += motion_vector[1] as f32 * 0.1;
+                scene.camera_pos[2] += motion_vector[0] as f32 * -0.01;
+                scene.camera_pos[0] += motion_vector[1] as f32 * 0.01;
                 scene.paint(painter.gl(), (rect.width(), rect.height()));
             }))
         };
@@ -110,7 +112,15 @@ impl App for DandelionApp {
             stroke: egui::Stroke::NONE,
         };
         egui::CentralPanel::default().frame(default_frame).show(ctx, |ui| {
-            // Draw your UI here...
+            if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                ctx.send_viewport_cmd(ViewportCommand::Close);
+            }
+            if ui.input(|i| i.key_pressed(egui::Key::F11)) {
+                self.fullscreen = !self.fullscreen;
+                ctx.send_viewport_cmd(ViewportCommand::Fullscreen(self.fullscreen));
+                //ctx.send_viewport_cmd(ViewportCommand::CursorVisible(!self.fullscreen));
+            }
+            
             egui::Frame::canvas(ui.style()).show(ui, |ui| {
                 self.draw_scene(ui);
             });
